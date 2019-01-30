@@ -1,0 +1,3 @@
+# slack-intelbot
+OSINT slack bot 
+documentation in process.... 
