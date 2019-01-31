@@ -67,7 +67,7 @@ class intelbot():
 
         res = self.slack_client.api_call(
             "files.upload",
-            channels='intelbot-dev',
+            channels=self.channel,
             content=content,
             filename=filename,
             file = tmp
