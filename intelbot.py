@@ -216,11 +216,14 @@ class intelbot():
             headers = {'api-key': self.hybrid_api, 'user-agent' : 'Falcon Sandbox'}
             pprint(headers)
             data = {'hash' : hash}
-
-            req = requests.post('https://www.hybrid-analysis.com/api/v2/search/hash'.format(hash),data=data,headers=headers)
-            res = req.json()[0]
-            self.output[hash].update({'threat_score' : '{} out of 100'.format(res['threat_score'])})
-            self.output[hash].update({'verdict': res['verdict']})
+            try:
+                req = requests.post('https://www.hybrid-analysis.com/api/v2/search/hash'.format(hash),data=data,headers=headers)
+                res = req.json()[0]
+                self.output[hash].update({'threat_score' : '{} out of 100'.format(res['threat_score'])})
+                self.output[hash].update({'verdict': res['verdict']})
+            except:
+                self.output[hash].update({'hybrid-analysis': 'not present'})
+                return
 
             #self.output[hash]
     def query_geo(self,ips):
