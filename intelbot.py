@@ -41,13 +41,14 @@ class intelbot():
         self.abusedb_api = os.environ.get('ABUSEDB_API')
         self.hybrid_api = os.environ.get('HYBRID_API')
         self.output = defaultdict(dict)
+        self.channel = os.environ.get("CHANNEL")
 
 
     def slack_post_msg(self,msg):
 
         resp = self.slack_client.api_call(
             "chat.postMessage",
-            channel="intelbot-dev",
+            channel=self.channel,
             text=msg
         )
         
