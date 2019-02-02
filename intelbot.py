@@ -13,6 +13,7 @@ from ipwhois import IPWhois
 from whois import whois
 import csv
 import json
+import websocket
 
 log = logging.getLogger()
 log.setLevel(logging.INFO)
@@ -44,6 +45,7 @@ class intelbot():
         self.channel = os.environ.get("CHANNEL")
 
 
+
     def slack_post_msg(self,msg):
 
         resp = self.slack_client.api_call(
@@ -63,8 +65,6 @@ class intelbot():
             with open(file, 'rb') as fh:
                 tmp = fh.read()
                 filename = file
-
-
         res = self.slack_client.api_call(
             "files.upload",
             channels=self.channel,
@@ -166,8 +166,6 @@ class intelbot():
             self.slack_file_upload(output,output_format)
         #pprint(json.dumps(self.output))
         return
-
-
 
     def craft_csv(self):
         with open('tmp.csv', 'w') as csvfile:
@@ -366,6 +364,10 @@ class intelbot():
             self.output[ip].update({'confidence_score': resp['data']['abuseConfidenceScore']})
             self.output[ip].update({'total_reports': resp['data']['totalReports']})
 
+    def connect(self):
+
+
+
 if __name__ == "__main__":
 
 
@@ -377,13 +379,19 @@ if __name__ == "__main__":
         intelbot_id = s_client.api_call("auth.test")['user_id']
         log.info(intelbot_id)
         while True:
-            command, channel  = slack_obj.parse_commands(s_client.rtm_read())
-            if command:
-                slack_obj.handle_command(command,channel)
+            try:
+                command, channel  = slack_obj.parse_commands(s_client.rtm_read())
+                if command:
+                    slack_obj.handle_command(command,channel)
 
-
-            time.sleep(slack_obj.rtm_read_delay)
-            slack_obj.output.clear()
+                time.sleep(slack_obj.rtm_read_delay)
+                slack_obj.output.clear()
+            except websocket.WebSocketConnectionClosedException as ex:
+                log.info("[*] Caught websocket disconnect {}, reconnecting...".format(ex))
+                time.sleep(1)
+                s_client.rtm_connect()
+            except Exception as ex:
+                log.info("[*] Exception caught {}".format(ex))
     else:
         log.info("{}".format("Connection failed. "))
     #slack_obj.slack_post_msg("test")
