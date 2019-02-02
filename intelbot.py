@@ -364,9 +364,6 @@ class intelbot():
             self.output[ip].update({'confidence_score': resp['data']['abuseConfidenceScore']})
             self.output[ip].update({'total_reports': resp['data']['totalReports']})
 
-    def connect(self):
-
-
 
 if __name__ == "__main__":
 
