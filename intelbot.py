@@ -44,8 +44,6 @@ class intelbot():
         self.output = defaultdict(dict)
         self.channel = os.environ.get("CHANNEL")
 
-
-
     def slack_post_msg(self,msg):
 
         resp = self.slack_client.api_call(
@@ -237,70 +235,76 @@ class intelbot():
     def query_otx(self,iocs, ioc_type):
         otx  = OTXv2(os.environ.get('OTX_API'))
         for ioc in iocs:
-            tags = set()
-            indicator_type = ''
-            if ioc_type == 'hash':
-                #this might not work wince it doesnt provide useful data
+            try:
+                tags = set()
+                indicator_type = ''
 
-                indicator_type = IndicatorTypes.FILE_HASH_SHA1
-                data = otx.get_indicator_details_full(indicator_type,ioc)
-                pprint(data)
+                if ioc_type == 'hash':
+                    #this might not work wince it doesnt provide useful data
 
-            if ioc_type == 'ip':
+                    indicator_type = IndicatorTypes.FILE_HASH_SHA1
+                    data = otx.get_indicator_details_full(indicator_type,ioc)
+                    pprint(data)
 
-                indicator_type = IndicatorTypes.IPv4
-                tag_data = otx.get_indicator_details_by_section(indicator_type, ioc, 'general')
-                reputation = otx.get_indicator_details_by_section(indicator_type, ioc, 'reputation')
-                tag_data = tag_data['pulse_info']['pulses']
-                tag_data = [tags.add(t) for tag in tag_data for t in tag['tags']]
-                reputation = reputation['reputation']
-                if bool(reputation) == False:
-                    self.query_ip_whois(ioc)
-                    self.output[ioc].update({'data': 'none'})
-                    continue
-                self.output[ioc].update({'tags': ",".join(tags)})
-                self.output[ioc].update({'threat_score': '{} out of (7) '.format(reputation['threat_score'])})
-                self.output[ioc].update({'first_seen': reputation['first_seen']})
-                self.output[ioc].update({'last_seen': reputation['last_seen']})
-                self.output[ioc].update({'sites_blacklisted': len(
-                    reputation['matched_bl']) if 'matched_bl' in reputation else 'none'})
+                if ioc_type == 'ip':
 
-            if ioc_type == 'domain':
-                '''
-                for domain the following sections are available
-                'sections': ['general',
-                              'geo',
-                              'url_list',
-                              'passive_dns',
-                              'malware',
-                              'whois',
-                              'http_scans'],
-                              
-                geo section returns the following data 
-                {'area_code': 0,
-                     'asn': 'AS16276 OVH SAS',
-                     'charset': 0,
-                     'city': 'Paris',
-                     'city_data': True,
-                     'continent_code': 'EU',
-                     'country_code': 'FR',
-                     'country_code3': 'FRA',
-                     'country_name': 'France',
-                     'dma_code': 0,
-                     'flag_title': 'France',
-                     'flag_url': '/static/img/flags/fr.png',
-                     'latitude': 48.86280059814453,
-                     'longitude': 2.329200029373169,
-                     'postal_code': '75001',
-                     'region': 'A8'}
-                '''
-                indicator_type = IndicatorTypes.DOMAIN
-                dom_data = otx.get_indicator_details_by_section(indicator_type, ioc, 'general')
-                dom_data = dom_data['pulse_info']['pulses']
-                dom_data = [tags.add(t) for tag in dom_data for t in tag['tags']]
-                self.output[ioc]['otx'].update({'tags' : ",".join(tags)})
-            geo = otx.get_indicator_details_by_section(indicator_type, ioc, 'geo')
-            self.output[ioc].update({'asn': '{}/{}'.format(geo['asn'], geo['country_name'])})
+                    indicator_type = IndicatorTypes.IPv4
+                    tag_data = otx.get_indicator_details_by_section(indicator_type, ioc, 'general')
+                    reputation = otx.get_indicator_details_by_section(indicator_type, ioc, 'reputation')
+                    tag_data = tag_data['pulse_info']['pulses']
+                    tag_data = [tags.add(t) for tag in tag_data for t in tag['tags']]
+                    reputation = reputation['reputation']
+                    if bool(reputation) == False:
+                        self.query_ip_whois(ioc)
+                        self.output[ioc].update({'data': 'none'})
+                        continue
+                    self.output[ioc].update({'tags': ",".join(tags)})
+                    self.output[ioc].update({'threat_score': '{} out of (7) '.format(reputation['threat_score'])})
+                    self.output[ioc].update({'first_seen': reputation['first_seen']})
+                    self.output[ioc].update({'last_seen': reputation['last_seen']})
+                    self.output[ioc].update({'sites_blacklisted': len(
+                        reputation['matched_bl']) if 'matched_bl' in reputation else 'none'})
+
+                if ioc_type == 'domain':
+                    '''
+                    for domain the following sections are available
+                    'sections': ['general',
+                                  'geo',
+                                  'url_list',
+                                  'passive_dns',
+                                  'malware',
+                                  'whois',
+                                  'http_scans'],
+                                  
+                    geo section returns the following data 
+                    {'area_code': 0,
+                         'asn': 'AS16276 OVH SAS',
+                         'charset': 0,
+                         'city': 'Paris',
+                         'city_data': True,
+                         'continent_code': 'EU',
+                         'country_code': 'FR',
+                         'country_code3': 'FRA',
+                         'country_name': 'France',
+                         'dma_code': 0,
+                         'flag_title': 'France',
+                         'flag_url': '/static/img/flags/fr.png',
+                         'latitude': 48.86280059814453,
+                         'longitude': 2.329200029373169,
+                         'postal_code': '75001',
+                         'region': 'A8'}
+                    '''
+                    indicator_type = IndicatorTypes.DOMAIN
+                    dom_data = otx.get_indicator_details_by_section(indicator_type, ioc, 'general')
+                    dom_data = dom_data['pulse_info']['pulses']
+                    dom_data = [tags.add(t) for tag in dom_data for t in tag['tags']]
+                    self.output[ioc]['otx'].update({'tags' : ",".join(tags)})
+                geo = otx.get_indicator_details_by_section(indicator_type, ioc, 'geo')
+                self.output[ioc].update({'asn': '{}/{}'.format(geo['asn'], geo['country_name'])})
+            except Exception as ex:
+                self.output[ioc].update({'otx-found': 'no'})
+                log.info("[*] Otx exception {}".format(ex))
+                return
 
 
             #check for ioc type for validation.
@@ -363,6 +367,7 @@ class intelbot():
             resp = req.json()
             self.output[ip].update({'confidence_score': resp['data']['abuseConfidenceScore']})
             self.output[ip].update({'total_reports': resp['data']['totalReports']})
+
 
 
 if __name__ == "__main__":
