@@ -216,8 +216,8 @@ class intelbot():
             try:
                 req = requests.post('https://www.hybrid-analysis.com/api/v2/search/hash'.format(hash),data=data,headers=headers)
                 res = req.json()[0]
-                self.output[hash].update({'threat_score' : '{} out of 100'.format(res['threat_score'])})
-                self.output[hash].update({'verdict': res['verdict']})
+                self.output[hash].update({'Hybrid_analysis_threat_score' : '{} out of 100'.format(res['threat_score'])})
+                self.output[hash].update({'Hybrid_analysis_verdict': res['verdict']})
             except:
                 self.output[hash].update({'hybrid-analysis': 'not present'})
                 return
@@ -258,11 +258,11 @@ class intelbot():
                         self.query_ip_whois(ioc)
                         self.output[ioc].update({'data': 'none'})
                         continue
-                    self.output[ioc].update({'tags': ",".join(tags)})
-                    self.output[ioc].update({'threat_score': '{} out of (7) '.format(reputation['threat_score'])})
-                    self.output[ioc].update({'first_seen': reputation['first_seen']})
-                    self.output[ioc].update({'last_seen': reputation['last_seen']})
-                    self.output[ioc].update({'sites_blacklisted': len(
+                    self.output[ioc].update({'otx_tags': ",".join(tags)})
+                    self.output[ioc].update({'otx_threat_score': '{} out of (7) '.format(reputation['threat_score'])})
+                    self.output[ioc].update({'otx_first_seen': reputation['first_seen']})
+                    self.output[ioc].update({'otx_last_seen': reputation['last_seen']})
+                    self.output[ioc].update({'otx_sites_blacklisted': len(
                         reputation['matched_bl']) if 'matched_bl' in reputation else 'none'})
 
                 if ioc_type == 'domain':
@@ -298,9 +298,9 @@ class intelbot():
                     dom_data = otx.get_indicator_details_by_section(indicator_type, ioc, 'general')
                     dom_data = dom_data['pulse_info']['pulses']
                     dom_data = [tags.add(t) for tag in dom_data for t in tag['tags']]
-                    self.output[ioc]['otx'].update({'tags' : ",".join(tags)})
+                    self.output[ioc].update({'otx_tags' : ",".join(tags)})
                 geo = otx.get_indicator_details_by_section(indicator_type, ioc, 'geo')
-                self.output[ioc].update({'asn': '{}/{}'.format(geo['asn'], geo['country_name'])})
+                self.output[ioc].update({'otx_asn': '{}/{}'.format(geo['asn'], geo['country_name'])})
             except Exception as ex:
                 self.output[ioc].update({'otx-found': 'no'})
                 log.info("[*] Otx exception {}".format(ex))
@@ -344,18 +344,18 @@ class intelbot():
             for key, value in resp.items():
                 if key == 'detected_downloaded_samples':
                     self.output[ioc].update(
-                        {'detected_downloaded_samples': len(resp['detected_downloaded_samples'])})
+                        {'Virus_total_detected_downloaded_samples': len(resp['detected_downloaded_samples'])})
                 elif key == 'detected_urls':
                     self.output[ioc].update({
-                        'detected_urls': len(resp['detected_urls'])})
+                        'Virus_total_detected_urls': len(resp['detected_urls'])})
                 elif key == 'positives':
                     self.output[ioc].update({
-                        'Detections (AV):': resp['positives']})
+                        'Virus_total_Detections (AV):': resp['positives']})
                     link = 'https://www.virustotal.com/en/{}/{}/analysis/'.format(url_param, resp['sha256'])
 
                 elif key == 'detected_communicating_samples':
                     self.output[ioc].update(
-                        {'detected_communicating_samples': len(resp['detected_communicating_samples'])})
+                        {'Virus_total_detected_communicating_samples': len(resp['detected_communicating_samples'])})
                 self.output[ioc].update(
                     {'link': link })
 
@@ -365,8 +365,8 @@ class intelbot():
             headers = {'Accept' : 'application/json', 'key' : self.abusedb_api}
             req = requests.get('https://api.abuseipdb.com/api/v2/check',params=params,headers=headers)
             resp = req.json()
-            self.output[ip].update({'confidence_score': resp['data']['abuseConfidenceScore']})
-            self.output[ip].update({'total_reports': resp['data']['totalReports']})
+            self.output[ip].update({'Abuse_db_confidence_score': resp['data']['abuseConfidenceScore']})
+            self.output[ip].update({'Abuse_db_total_reports': resp['data']['totalReports']})
 
 
 
