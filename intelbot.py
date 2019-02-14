@@ -146,23 +146,24 @@ class intelbot():
         elif command.startswith("!hash"):
             response = "looking up those hashes for you ... just a sec"
             hashes = command.split(' ')[1].split(',')
-            hash_check = [False for hash in hashes if self.is_sha1(hash) == False]
-            if False in hash_check:
-                self.slack_post_msg("hash is malformed. Format must be !hash sha1,sha1")
-            self.query_vt(hashes,'hash')
-           # self.query_otx(hashes, 'hash')
-            self.query_h_analysis(hashes)
+            hash_check = [(self.is_sha256(hash),self.is_md5(hash),self.is_sha1(hash)) for hash in hashes ]
+            #if (self.is_sha1(hash) == 'True-sha1' or self.is_md5(hash) == 'True-md5'  or self.is_sha256(hash) == 'True-sha256' )
+            #re.search(r'True-.*',i)
+            h_check = [re.search(r'True.*', i).group(0) for i in hash_check[0] if re.search(r'True.*', i) ][0]
+
+            if h_check:
+                #self.slack_post_msg("hash is malformed. Format must be !hash sha1,sha1")
+                h_check = h_check.split('-')[1]
+                self.query_vt(hashes,'hash')
+                self.query_otx(hashes, 'hash', h_check)
+                self.query_h_analysis(hashes)
         self.slack_post_msg(response)
         if output_format == 'csv':
             self.craft_csv()
-        if output_format == 'json':
-            with open('tmp.json', 'w') as fh:
-                fh.write(json.dumps(self.output))
 
         if output_format == 'text':
             output = json.dumps(self.output, indent=4)
             self.slack_file_upload(output,output_format)
-        #pprint(json.dumps(self.output))
         return
 
     def craft_csv(self):
@@ -194,7 +195,27 @@ class intelbot():
     def is_sha1(self, hash):
         sha1_regex = r'(?=(\b[A-Fa-f0-9]{40}\b))'
         if re.search(sha1_regex, hash) == None:
-            return False
+            return 'False'
+        else:
+            return 'True-sha1'
+
+
+    def is_md5(self,hash):
+        md5_regex = r'(?=(\b[A-Fa-f0-9]{32}\b))'
+        if re.search(md5_regex, hash) == None:
+            return 'False'
+        else:
+            return 'True-md5'
+
+    def is_sha256(self,hash):
+        sha256_regex = r'(?=(\b[A-Fa-f0-9]{64}\b))'
+        if re.search(sha256_regex, hash) == None:
+            return 'False'
+        else:
+            return 'True-sha256'
+
+
+
 
     def is_domain(self, domain):
         dom_regex = r'\A([a-z0-9]+(-[a-z0-9]+)*\[\.\])+[a-z]{2,}\Z'
@@ -232,7 +253,7 @@ class intelbot():
             resp =  dict(i.split(':') for i in req.text.split('\n'))
             self.output[ip]['geo'].update(resp)
 
-    def query_otx(self,iocs, ioc_type):
+    def query_otx(self,iocs, ioc_type, hash_type):
         otx  = OTXv2(os.environ.get('OTX_API'))
         for ioc in iocs:
             try:
@@ -241,10 +262,20 @@ class intelbot():
 
                 if ioc_type == 'hash':
                     #this might not work wince it doesnt provide useful data
+                    if hash_type == 'sha1':
+                        indicator_type = IndicatorTypes.FILE_HASH_SHA1
+                    elif hash_type == 'sha256':
+                        indicator_type = IndicatorTypes.FILE_HASH_SHA256
+                    elif hash_type == 'md5':
+                        indicator_type = IndicatorTypes.FILE_HASH_MD5
 
-                    indicator_type = IndicatorTypes.FILE_HASH_SHA1
-                    data = otx.get_indicator_details_full(indicator_type,ioc)
-                    pprint(data)
+
+                    data = otx.get_indicator_details_by_section(indicator_type,ioc,'general')
+                    tag_data = data['pulse_info']['pulses']
+                    tag_data = [tags.add(tag['name']) for tag in tag_data]
+
+                    if tags:
+                        self.output[ioc].update({'otx_tags': ",".join(tags)})
 
                 if ioc_type == 'ip':
 
@@ -299,8 +330,9 @@ class intelbot():
                     dom_data = dom_data['pulse_info']['pulses']
                     dom_data = [tags.add(t) for tag in dom_data for t in tag['tags']]
                     self.output[ioc].update({'otx_tags' : ",".join(tags)})
-                geo = otx.get_indicator_details_by_section(indicator_type, ioc, 'geo')
-                self.output[ioc].update({'otx_asn': '{}/{}'.format(geo['asn'], geo['country_name'])})
+                if ioc_type == 'domain' or ioc_type == 'ip':
+                    geo = otx.get_indicator_details_by_section(indicator_type, ioc, 'geo')
+                    self.output[ioc].update({'otx_asn': '{}/{}'.format(geo['asn'], geo['country_name'])})
             except Exception as ex:
                 self.output[ioc].update({'otx-found': 'no'})
                 log.info("[*] Otx exception {}".format(ex))
@@ -395,5 +427,6 @@ if __name__ == "__main__":
             except Exception as ex:
                 log.info("[*] Exception caught {}".format(ex))
     else:
+        s_client.rtm_connect()
         log.info("{}".format("Connection failed. "))
     #slack_obj.slack_post_msg("test")
