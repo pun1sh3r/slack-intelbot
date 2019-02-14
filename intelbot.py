@@ -239,8 +239,9 @@ class intelbot():
                 res = req.json()[0]
                 self.output[hash].update({'Hybrid_analysis_threat_score' : '{} out of 100'.format(res['threat_score'])})
                 self.output[hash].update({'Hybrid_analysis_verdict': res['verdict']})
-            except:
+            except Exception as ex:
                 self.output[hash].update({'hybrid-analysis': 'not present'})
+                log.info("exception {}".format(ex))
                 return
 
             #self.output[hash]
