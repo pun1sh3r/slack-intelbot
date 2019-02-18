@@ -126,7 +126,7 @@ class intelbot():
             else:
                 response = 'querying..... just a sec....'
             self.query_vt(ips, 'ip')
-            self.query_otx(ips, 'ip')
+            self.query_otx(ips, 'ip','none')
             self.query_abusedb(ips)
 
         elif command.startswith("!domain"):
@@ -139,7 +139,7 @@ class intelbot():
                 return
             domains =  [re.sub(r'(>|\[|\])','',dom) for dom in domains]
             self.query_vt(domains,'domain')
-            self.query_otx(domains,'domain')
+            self.query_otx(domains,'domain','None')
             self.query_whois(domains)
 
 
@@ -147,16 +147,17 @@ class intelbot():
             response = "looking up those hashes for you ... just a sec"
             hashes = command.split(' ')[1].split(',')
             hash_check = [(self.is_sha256(hash),self.is_md5(hash),self.is_sha1(hash)) for hash in hashes ]
-            #if (self.is_sha1(hash) == 'True-sha1' or self.is_md5(hash) == 'True-md5'  or self.is_sha256(hash) == 'True-sha256' )
-            #re.search(r'True-.*',i)
             h_check = [re.search(r'True.*', i).group(0) for i in hash_check[0] if re.search(r'True.*', i) ][0]
 
             if h_check:
-                #self.slack_post_msg("hash is malformed. Format must be !hash sha1,sha1")
+                #
                 h_check = h_check.split('-')[1]
                 self.query_vt(hashes,'hash')
                 self.query_otx(hashes, 'hash', h_check)
                 self.query_h_analysis(hashes)
+            else:
+                self.slack_post_msg("hash is malformed. Format must be !hash (sha1|md5|sha256)")
+
         self.slack_post_msg(response)
         if output_format == 'csv':
             self.craft_csv()
@@ -232,7 +233,6 @@ class intelbot():
     def query_h_analysis(self, hashes):
         for hash in hashes:
             headers = {'api-key': self.hybrid_api, 'user-agent' : 'Falcon Sandbox'}
-            pprint(headers)
             data = {'hash' : hash}
             try:
                 req = requests.post('https://www.hybrid-analysis.com/api/v2/search/hash'.format(hash),data=data,headers=headers)
@@ -243,8 +243,6 @@ class intelbot():
                 self.output[hash].update({'hybrid-analysis': 'not present'})
                 log.info("exception {}".format(ex))
                 return
-
-            #self.output[hash]
     def query_geo(self,ips):
         #::delete this function since otx already provides this.
         for ip in ips:
@@ -260,7 +258,6 @@ class intelbot():
             try:
                 tags = set()
                 indicator_type = ''
-
                 if ioc_type == 'hash':
                     #this might not work wince it doesnt provide useful data
                     if hash_type == 'sha1':
