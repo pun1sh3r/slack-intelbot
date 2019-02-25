@@ -350,6 +350,7 @@ class intelbot():
         dict_keys(['undetected_downloaded_samples', 'whois_timestamp', 'detected_downloaded_samples', 'detected_referrer_samples', 'undetected_referrer_samples', 'resolutions', 'detected_communicating_samples', 'asn', 'network', 'undetected_urls', 'whois', 'country', 'response_code', 'as_owner', 'verbose_msg', 'detected_urls', 'undetected_communicating_samples'])
         '''
         results = ''
+        timeout = 240
         for ioc in iocs:
             params = ''
             url_param = ''
@@ -388,6 +389,7 @@ class intelbot():
                         {'Virus_total_detected_communicating_samples': len(resp['detected_communicating_samples'])})
                 self.output[ioc].update(
                     {'link': link })
+            time.sleep(15)
 
     def query_abusedb(self,ips):
         for ip in ips:
