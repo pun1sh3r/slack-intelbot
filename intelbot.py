@@ -43,6 +43,7 @@ class intelbot():
         self.hybrid_api = os.environ.get('HYBRID_API')
         self.output = defaultdict(dict)
         self.channel = os.environ.get("CHANNEL")
+        self.file_id = 'none'
 
     def slack_post_msg(self,msg):
 
@@ -75,15 +76,32 @@ class intelbot():
         matches = re.search(self.mention_regex, event_text)
         return (matches.group(1), matches.group(2).strip()) if matches else (None,None)
 
+    def slack_file_read(self):
+        res = self.slack_client.api_call(
+            "files.info",
+            file=self.file_id
+        )
+
+        file_content = res['content']
+        #fh = requests.get(file_url, headers={'Authorization': 'Bearer {}'.format(self.slack_client)})
+
+        return file_content.split('\n')
+
     def parse_commands(self, slack_events):
         for event in slack_events:
             if event['type'] == 'message' and not 'subtype' in event:
                 user_id, message = self.parse_direct_mention(event['text'])
                 if user_id == slack_obj.intelbot_id:
                     log.info("{}-{}".format(message, event['channel']))
-                    return message, event['channel']
+                    print(event.keys())
 
-        return None, None
+                    if 'files' in event:
+                        self.file_id= event['files'][0]['id']
+
+                        return message, event['channel'], self.file_id
+                    return message, event['channel'],self.file_id
+
+        return None, None, None
 
     def handle_command(self,command, channel):
         response = "Not sure what you meant. Try < @intelbot > <{}> \"indicator list\" <{}>".format("| ".join(self.commands),"csv|text ")
@@ -145,7 +163,14 @@ class intelbot():
 
         elif command.startswith("!hash"):
             response = "looking up those hashes for you ... just a sec"
-            hashes = command.split(' ')[1].split(',')
+
+            if command.split(' ')[1] == 'file':
+
+                hashes = self.slack_file_read()
+
+            else:
+
+                hashes = command.split(' ')[1].split(',')
             hash_check = [(self.is_sha256(hash),self.is_md5(hash),self.is_sha1(hash)) for hash in hashes ]
             h_check = [re.search(r'True.*', i).group(0) for i in hash_check[0] if re.search(r'True.*', i) ][0]
 
@@ -154,7 +179,7 @@ class intelbot():
                 h_check = h_check.split('-')[1]
                 self.query_vt(hashes,'hash')
                 self.query_otx(hashes, 'hash', h_check)
-                self.query_h_analysis(hashes)
+                #self.query_h_analysis(hashes)
             else:
                 self.slack_post_msg("hash is malformed. Format must be !hash (sha1|md5|sha256)")
 
@@ -214,8 +239,6 @@ class intelbot():
             return 'False'
         else:
             return 'True-sha256'
-
-
 
 
     def is_domain(self, domain):
@@ -278,14 +301,16 @@ class intelbot():
                 if ioc_type == 'ip':
 
                     indicator_type = IndicatorTypes.IPv4
-                    tag_data = otx.get_indicator_details_by_section(indicator_type, ioc, 'general')
+                    otx_data = otx.get_indicator_details_by_section(indicator_type, ioc, 'general')
                     reputation = otx.get_indicator_details_by_section(indicator_type, ioc, 'reputation')
-                    tag_data = tag_data['pulse_info']['pulses']
+                    tag_data = otx_data['pulse_info']['pulses']
                     tag_data = [tags.add(t) for tag in tag_data for t in tag['tags']]
                     reputation = reputation['reputation']
+                    self.output[ioc].update({'otx-asn' : otx_data['asn']})
                     if bool(reputation) == False:
-                        self.query_ip_whois(ioc)
+                        #self.query_ip_whois(ioc)
                         self.output[ioc].update({'data': 'none'})
+                        self.output[ioc].update({'otx_tags': ",".join(tags)})
                         continue
                     self.output[ioc].update({'otx_tags': ",".join(tags)})
                     self.output[ioc].update({'otx_threat_score': '{} out of (7) '.format(reputation['threat_score'])})
@@ -350,7 +375,7 @@ class intelbot():
         dict_keys(['undetected_downloaded_samples', 'whois_timestamp', 'detected_downloaded_samples', 'detected_referrer_samples', 'undetected_referrer_samples', 'resolutions', 'detected_communicating_samples', 'asn', 'network', 'undetected_urls', 'whois', 'country', 'response_code', 'as_owner', 'verbose_msg', 'detected_urls', 'undetected_communicating_samples'])
         '''
         results = ''
-        timeout = 240
+
         for ioc in iocs:
             params = ''
             url_param = ''
@@ -373,6 +398,7 @@ class intelbot():
             resp = req.json()
             link = 'https://www.virustotal.com/en/{}/{}/information/'.format(url_param, ioc)
             for key, value in resp.items():
+
                 if key == 'detected_downloaded_samples':
                     self.output[ioc].update(
                         {'Virus_total_detected_downloaded_samples': len(resp['detected_downloaded_samples'])})
@@ -387,9 +413,13 @@ class intelbot():
                 elif key == 'detected_communicating_samples':
                     self.output[ioc].update(
                         {'Virus_total_detected_communicating_samples': len(resp['detected_communicating_samples'])})
+                try:
+                    self.output[ioc].update({'Virus_total_Mcafee_detected': resp['scans']['McAfee']['detected']})
+                except Exception as ex:
+                    self.output[ioc].update({'Virus_total_Mcafee_detected': 'False'})
                 self.output[ioc].update(
                     {'link': link })
-            time.sleep(15)
+
 
     def query_abusedb(self,ips):
         for ip in ips:
@@ -414,7 +444,7 @@ if __name__ == "__main__":
         log.info(intelbot_id)
         while True:
             try:
-                command, channel  = slack_obj.parse_commands(s_client.rtm_read())
+                command,channel,file_id  = slack_obj.parse_commands(s_client.rtm_read())
                 if command:
                     slack_obj.handle_command(command,channel)
 
