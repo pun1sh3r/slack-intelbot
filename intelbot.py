@@ -424,13 +424,16 @@ class intelbot():
 
     def query_abusedb(self,ips):
         for ip in ips:
+
             params = {'ipAddress': ip ,'verbose': 'yes', 'maxAgeInDays' : '90'}
             headers = {'Accept' : 'application/json', 'key' : self.abusedb_api}
             req = requests.get('https://api.abuseipdb.com/api/v2/check',params=params,headers=headers)
-            resp = req.json()
-            self.output[ip].update({'Abuse_db_confidence_score': resp['data']['abuseConfidenceScore']})
-            self.output[ip].update({'Abuse_db_total_reports': resp['data']['totalReports']})
-
+            if req.status_code == 200:
+                resp = req.json()
+                self.output[ip].update({'Abuse_db_confidence_score': resp['data']['abuseConfidenceScore']})
+                self.output[ip].update({'Abuse_db_total_reports': resp['data']['totalReports']})
+            else:
+                self.output[ip].update({'AbuseDB' : 'not-available'})
 
 
 if __name__ == "__main__":
