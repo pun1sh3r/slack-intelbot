@@ -122,6 +122,7 @@ class intelbot():
         - !ip: searched a comma separated list of ip's on well known threat intel databases
         - !domain: searches a comma separated list of domains on well known threat intel databases
         - !hash: searches a comma separated list of hashes(sha1 on well known threat intel databases
+        
 
         output types: csv|text 
 
