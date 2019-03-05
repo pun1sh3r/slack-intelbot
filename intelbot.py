@@ -17,7 +17,7 @@ import websocket
 
 log = logging.getLogger()
 log.setLevel(logging.INFO)
-formatter = logging.Formatter(fmt='%(asctime)s: %(levelname)s: %(message)s')
+formatter = logging.Formatter(fmt='%(asctime)s: %(levelname)s: %(lineno)d : %(message)s')
 handler = logging.StreamHandler(stream=sys.stdout)
 handler.setFormatter(formatter)
 log.addHandler(handler)
@@ -85,7 +85,8 @@ class intelbot():
         file_content = res['content']
         #fh = requests.get(file_url, headers={'Authorization': 'Bearer {}'.format(self.slack_client)})
 
-        return file_content.split('\n')
+        file_data = file_content.rstrip()
+        return file_data.split('\n')
 
     def parse_commands(self, slack_events):
         for event in slack_events:
@@ -123,7 +124,9 @@ class intelbot():
         - !domain: searches a comma separated list of domains on well known threat intel databases
         - !hash: searches a comma separated list of hashes(sha1 on well known threat intel databases
         
-
+        bulk searches:
+        - upload file to be queried just like a regular upload on slack. each file must contain the same type of indicator e.g hash, ip or domain. once the file is ready to upload on the "add a message about the file section" type the following: @intelbot command "file" output_type. the keywork file is needed to be able to parse the file properly. 
+        
         output types: csv|text 
 
                     '''
@@ -137,7 +140,12 @@ class intelbot():
         #pprint(output_format)
 
         if command.startswith("!ip"):
-            ips = command.split(' ')[1].split(',')
+            if command.split(' ')[1] == 'file':
+                ips = self.slack_file_read()
+            else:
+
+                ips = command.split(' ')[1].split(',')
+
             ip_check= [ False for ip in ips if self.is_ip(ip) == False]
             if False in ip_check:
                 self.slack_post_msg("ip address is malformed. Format must be !ip 1.1.1.1,2.2.2.2,3.3.3.3")
@@ -150,8 +158,13 @@ class intelbot():
 
         elif command.startswith("!domain"):
             #write logic go defang the domains
+            if command.split(' ')[1] == 'file':
+                domains = self.slack_file_read()
+            else:
+
+                domains = command.split(' ')[1].split(',')
+
             response = " Looking up the  domains for you... just a sec"
-            domains = command.split(' ')[1].split(',')
             dom_check = [False for dom in domains if self.is_domain(dom) == False]
             if False in dom_check:
                 self.slack_post_msg("Domain is malformed. Format must be !domain google[.]com,test[.]com")
@@ -170,7 +183,6 @@ class intelbot():
                 hashes = self.slack_file_read()
 
             else:
-
                 hashes = command.split(' ')[1].split(',')
             hash_check = [(self.is_sha256(hash),self.is_md5(hash),self.is_sha1(hash)) for hash in hashes ]
             h_check = [re.search(r'True.*', i).group(0) for i in hash_check[0] if re.search(r'True.*', i) ][0]
@@ -207,10 +219,15 @@ class intelbot():
 
     def query_whois(self,domains):
         for dom in domains:
-            who_is = whois(dom)
-            self.output[dom].update({'registrar': who_is.registrar })
-            self.output[dom].update({'emails' : who_is.emails })
-            self.output[dom].update({'creation_date' : str(who_is.creation_date)})
+            try:
+                who_is = whois(dom)
+                date = who_is.creation_date[0].date()
+                print(type(date))
+                self.output[dom].update({'registrar': who_is.registrar })
+                self.output[dom].update({'emails' : who_is.emails })
+                self.output[dom].update({'creation_date' : str(date)})
+            except Exception as ex:
+                log.info("[*] exception caught inside query_whois {}".format(ex))
 
     def query_ip_whois(self,ip):
         # this function will be deleted soon.
@@ -243,7 +260,7 @@ class intelbot():
 
 
     def is_domain(self, domain):
-        dom_regex = r'\A([a-z0-9]+(-[a-z0-9]+)*\[\.\])+[a-z]{2,}\Z'
+        dom_regex = r'\A([a-z0-9]+(-[a-z0-9]+)*\[?\.\]?)+[a-z]{2,}\Z'
         if re.search(dom_regex, domain) == None:
             return False
 
