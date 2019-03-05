@@ -125,7 +125,7 @@ class intelbot():
         - !hash: searches a comma separated list of hashes(sha1 on well known threat intel databases
         
         bulk searches:
-        - upload file to be queried just like a regular upload on slack. each file must contain the same type of indicator e.g hash, ip or domain. once the file is ready to upload on the "add a message about the file section" type the following: @intelbot command "file" output_type. the keywork file is needed to be able to parse the file properly. 
+        - upload file to be queried just like a regular upload on slack. each file must contain the same type of indicator e.g hash, ip or domain. once the file is ready to upload on the "add a message about the file section" type the following: @intelbot command "file" output_type. the keywork file is needed to be able to parse the file properly.
         
         output types: csv|text 
 
