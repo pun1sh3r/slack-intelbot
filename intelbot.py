@@ -44,7 +44,6 @@ class intelbot():
         self.output = defaultdict(dict)
         self.channel = os.environ.get("CHANNEL")
         self.file_id = 'none'
-
     def slack_post_msg(self,msg):
 
         resp = self.slack_client.api_call(
@@ -52,7 +51,6 @@ class intelbot():
             channel=self.channel,
             text=msg
         )
-        
     def slack_file_upload(self,file,type):
         tmp = ''
         content = ''
@@ -71,37 +69,29 @@ class intelbot():
             filename=filename,
             file = tmp
         )
-
     def parse_direct_mention(self,event_text):
         matches = re.search(self.mention_regex, event_text)
         return (matches.group(1), matches.group(2).strip()) if matches else (None,None)
-
     def slack_file_read(self):
         res = self.slack_client.api_call(
             "files.info",
             file=self.file_id
         )
-
         file_url = res['file']['url_private']
         fh = requests.get(file_url, headers={'Authorization': 'Bearer {}'.format(os.environ.get('SLACK_BOT_TOKEN'))})
-
         file_data = fh.text
         return file_data.split('\n')
-
     def parse_commands(self, slack_events):
         for event in slack_events:
             if event['type'] == 'message' and not 'subtype' in event:
                 user_id, message = self.parse_direct_mention(event['text'])
                 if user_id == slack_obj.intelbot_id:
                     log.info("{}-{}".format(message, event['channel']))
-                    print(event.keys())
-
                     if 'files' in event:
                         self.file_id= event['files'][0]['id']
 
                         return message, event['channel'], self.file_id
                     return message, event['channel'],self.file_id
-
         return None, None, None
 
     def handle_command(self,command, channel):
@@ -134,11 +124,7 @@ class intelbot():
         if cmd_length != 3:
             self.slack_post_msg(response)
             return
-
         output_format = command.split(' ')[2]
-        #pprint(len(command.split(' ')))
-        #pprint(output_format)
-
         if command.startswith("!ip"):
             if command.split(' ')[1] == 'file':
                 ips = self.slack_file_read()
@@ -155,47 +141,37 @@ class intelbot():
             self.query_vt(ips, 'ip')
             self.query_otx(ips, 'ip','none')
             self.query_abusedb(ips)
-
         elif command.startswith("!domain"):
             #write logic go defang the domains
             if command.split(' ')[1] == 'file':
                 domains = self.slack_file_read()
             else:
-
                 domains = command.split(' ')[1].split(',')
-
             response = " Looking up the  domains for you... just a sec"
             dom_check = [False for dom in domains if self.is_domain(dom) == False]
             if False in dom_check:
                 self.slack_post_msg("Domain is malformed. Format must be !domain google[.]com,test[.]com")
                 return
-            domains =  [re.sub(r'(>|\[|\])','',dom) for dom in domains]
+            domains =  [re.sub(r'(>|\[|\]|\s)','',dom) for dom in domains]
             self.query_vt(domains,'domain')
             self.query_otx(domains,'domain','None')
             self.query_whois(domains)
-
-
         elif command.startswith("!hash"):
             response = "looking up those hashes for you ... just a sec"
-
             if command.split(' ')[1] == 'file':
-
                 hashes = self.slack_file_read()
-
             else:
                 hashes = command.split(' ')[1].split(',')
             hash_check = [(self.is_sha256(hash),self.is_md5(hash),self.is_sha1(hash)) for hash in hashes ]
             h_check = [re.search(r'True.*', i).group(0) for i in hash_check[0] if re.search(r'True.*', i) ][0]
 
             if h_check:
-                #
                 h_check = h_check.split('-')[1]
                 self.query_vt(hashes,'hash')
                 self.query_otx(hashes, 'hash', h_check)
                 #self.query_h_analysis(hashes)
             else:
                 self.slack_post_msg("hash is malformed. Format must be !hash (sha1|md5|sha256)")
-
         self.slack_post_msg(response)
         if output_format == 'csv':
             self.craft_csv()
@@ -221,7 +197,7 @@ class intelbot():
         for dom in domains:
             try:
                 who_is = whois(dom)
-                date = who_is.creation_date[0].date()
+                date = who_is.creation_date.date()
                 print(type(date))
                 self.output[dom].update({'registrar': who_is.registrar })
                 self.output[dom].update({'emails' : who_is.emails })
@@ -235,34 +211,32 @@ class intelbot():
         ip_whois  = IPWhois(ip)
         ip_whois = ip_whois.lookup_whois()
         self.output[ip].update({'asn': ip_whois['asn_description']})
-
     def is_sha1(self, hash):
         sha1_regex = r'(?=(\b[A-Fa-f0-9]{40}\b))'
         if re.search(sha1_regex, hash) == None:
             return 'False'
         else:
             return 'True-sha1'
-
-
     def is_md5(self,hash):
         md5_regex = r'(?=(\b[A-Fa-f0-9]{32}\b))'
         if re.search(md5_regex, hash) == None:
             return 'False'
         else:
             return 'True-md5'
-
     def is_sha256(self,hash):
         sha256_regex = r'(?=(\b[A-Fa-f0-9]{64}\b))'
         if re.search(sha256_regex, hash) == None:
             return 'False'
         else:
             return 'True-sha256'
-
-
     def is_domain(self, domain):
-        dom_regex = r'\A([a-z0-9]+(-[a-z0-9]+)*\[?\.\]?)+[a-z]{2,}\Z'
-        if re.search(dom_regex, domain) == None:
-            return False
+        domain = domain.rstrip()
+        if domain:
+            domain = domain.replace('[.]','.')
+
+            dom_regex = r'\A([a-z0-9]+(-[a-z0-9]+)*\[?\.\]?)+[a-z]{2,}\Z'
+            if re.search(dom_regex, domain) == None:
+                return False
 
     def is_ip(self, ip):
         ip_regex = r'^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$'
@@ -270,7 +244,6 @@ class intelbot():
         #pprint(test)
         if re.search(ip_regex, ip) == None:
             return False
-
     def query_h_analysis(self, hashes):
         for hash in hashes:
 
@@ -294,7 +267,6 @@ class intelbot():
             req = requests.get("http://api.hackertarget.com/geoip/?q={}".format(ip))
             resp =  dict(i.split(':') for i in req.text.split('\n'))
             self.output[ip]['geo'].update(resp)
-
     def query_otx(self,iocs, ioc_type, hash_type):
         otx  = OTXv2(os.environ.get('OTX_API'))
         for ioc in iocs:
@@ -386,7 +358,6 @@ class intelbot():
             #check for ioc type for validation.
             #test = otx.get_indicator_details_full(indicator_type,ioc)
             #pprint(test)
-
     def query_vt(self,iocs,ioc_type):
         '''
         Virustotal detected URls
@@ -441,8 +412,6 @@ class intelbot():
                         self.output[ioc].update({'Virus_total_Mcafee_detected': 'False'})
                     self.output[ioc].update(
                         {'link': link })
-
-
     def query_abusedb(self,ips):
         for ip in ips:
             if ip.rstrip():
