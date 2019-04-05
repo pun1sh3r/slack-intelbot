@@ -388,7 +388,11 @@ class intelbot():
                     "User-Agent" : "intelbot "
                 }
                 req = requests.get('https://www.virustotal.com/vtapi/v2/{}/report'.format(url_param), params=params,headers=headers)
+                if req.status_code != 200:
+                    continue
+
                 resp = req.json()
+
                 link = 'https://www.virustotal.com/en/{}/{}/information/'.format(url_param, ioc)
                 for key, value in resp.items():
 
