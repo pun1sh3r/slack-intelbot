@@ -82,10 +82,10 @@ class intelbot():
             file=self.file_id
         )
 
-        file_content = res['content']
-        #fh = requests.get(file_url, headers={'Authorization': 'Bearer {}'.format(self.slack_client)})
+        file_url = res['file']['url_private']
+        fh = requests.get(file_url, headers={'Authorization': 'Bearer {}'.format(os.environ.get('SLACK_BOT_TOKEN'))})
 
-        file_data = file_content.rstrip()
+        file_data = fh.text
         return file_data.split('\n')
 
     def parse_commands(self, slack_events):
@@ -273,13 +273,15 @@ class intelbot():
 
     def query_h_analysis(self, hashes):
         for hash in hashes:
+
             headers = {'api-key': self.hybrid_api, 'user-agent' : 'Falcon Sandbox'}
             data = {'hash' : hash}
             try:
-                req = requests.post('https://www.hybrid-analysis.com/api/v2/search/hash'.format(hash),data=data,headers=headers)
-                res = req.json()[0]
-                self.output[hash].update({'Hybrid_analysis_threat_score' : '{} out of 100'.format(res['threat_score'])})
-                self.output[hash].update({'Hybrid_analysis_verdict': res['verdict']})
+                if hash.rstrip():
+                    req = requests.post('https://www.hybrid-analysis.com/api/v2/search/hash'.format(hash),data=data,headers=headers)
+                    res = req.json()[0]
+                    self.output[hash].update({'Hybrid_analysis_threat_score' : '{} out of 100'.format(res['threat_score'])})
+                    self.output[hash].update({'Hybrid_analysis_verdict': res['verdict']})
             except Exception as ex:
                 self.output[hash].update({'hybrid-analysis': 'not present'})
                 log.info("exception {}".format(ex))
@@ -297,83 +299,84 @@ class intelbot():
         otx  = OTXv2(os.environ.get('OTX_API'))
         for ioc in iocs:
             try:
-                tags = set()
-                indicator_type = ''
-                if ioc_type == 'hash':
-                    #this might not work wince it doesnt provide useful data
-                    if hash_type == 'sha1':
-                        indicator_type = IndicatorTypes.FILE_HASH_SHA1
-                    elif hash_type == 'sha256':
-                        indicator_type = IndicatorTypes.FILE_HASH_SHA256
-                    elif hash_type == 'md5':
-                        indicator_type = IndicatorTypes.FILE_HASH_MD5
+                if ioc.rstrip():
+                    tags = set()
+                    indicator_type = ''
+                    if ioc_type == 'hash':
+                        #this might not work wince it doesnt provide useful data
+                        if hash_type == 'sha1':
+                            indicator_type = IndicatorTypes.FILE_HASH_SHA1
+                        elif hash_type == 'sha256':
+                            indicator_type = IndicatorTypes.FILE_HASH_SHA256
+                        elif hash_type == 'md5':
+                            indicator_type = IndicatorTypes.FILE_HASH_MD5
 
 
-                    data = otx.get_indicator_details_by_section(indicator_type,ioc,'general')
-                    tag_data = data['pulse_info']['pulses']
-                    tag_data = [tags.add(tag['name']) for tag in tag_data]
+                        data = otx.get_indicator_details_by_section(indicator_type,ioc,'general')
+                        tag_data = data['pulse_info']['pulses']
+                        tag_data = [tags.add(tag['name']) for tag in tag_data]
 
-                    if tags:
+                        if tags:
+                            self.output[ioc].update({'otx_tags': ",".join(tags)})
+
+                    if ioc_type == 'ip':
+
+                        indicator_type = IndicatorTypes.IPv4
+                        otx_data = otx.get_indicator_details_by_section(indicator_type, ioc, 'general')
+                        reputation = otx.get_indicator_details_by_section(indicator_type, ioc, 'reputation')
+                        tag_data = otx_data['pulse_info']['pulses']
+                        tag_data = [tags.add(t) for tag in tag_data for t in tag['tags']]
+                        reputation = reputation['reputation']
+                        self.output[ioc].update({'otx-asn' : otx_data['asn']})
+                        if bool(reputation) == False:
+                            #self.query_ip_whois(ioc)
+                            self.output[ioc].update({'data': 'none'})
+                            self.output[ioc].update({'otx_tags': ",".join(tags)})
+                            continue
                         self.output[ioc].update({'otx_tags': ",".join(tags)})
+                        self.output[ioc].update({'otx_threat_score': '{} out of (7) '.format(reputation['threat_score'])})
+                        self.output[ioc].update({'otx_first_seen': reputation['first_seen']})
+                        self.output[ioc].update({'otx_last_seen': reputation['last_seen']})
+                        self.output[ioc].update({'otx_sites_blacklisted': len(
+                            reputation['matched_bl']) if 'matched_bl' in reputation else 'none'})
 
-                if ioc_type == 'ip':
-
-                    indicator_type = IndicatorTypes.IPv4
-                    otx_data = otx.get_indicator_details_by_section(indicator_type, ioc, 'general')
-                    reputation = otx.get_indicator_details_by_section(indicator_type, ioc, 'reputation')
-                    tag_data = otx_data['pulse_info']['pulses']
-                    tag_data = [tags.add(t) for tag in tag_data for t in tag['tags']]
-                    reputation = reputation['reputation']
-                    self.output[ioc].update({'otx-asn' : otx_data['asn']})
-                    if bool(reputation) == False:
-                        #self.query_ip_whois(ioc)
-                        self.output[ioc].update({'data': 'none'})
-                        self.output[ioc].update({'otx_tags': ",".join(tags)})
-                        continue
-                    self.output[ioc].update({'otx_tags': ",".join(tags)})
-                    self.output[ioc].update({'otx_threat_score': '{} out of (7) '.format(reputation['threat_score'])})
-                    self.output[ioc].update({'otx_first_seen': reputation['first_seen']})
-                    self.output[ioc].update({'otx_last_seen': reputation['last_seen']})
-                    self.output[ioc].update({'otx_sites_blacklisted': len(
-                        reputation['matched_bl']) if 'matched_bl' in reputation else 'none'})
-
-                if ioc_type == 'domain':
-                    '''
-                    for domain the following sections are available
-                    'sections': ['general',
-                                  'geo',
-                                  'url_list',
-                                  'passive_dns',
-                                  'malware',
-                                  'whois',
-                                  'http_scans'],
-                                  
-                    geo section returns the following data 
-                    {'area_code': 0,
-                         'asn': 'AS16276 OVH SAS',
-                         'charset': 0,
-                         'city': 'Paris',
-                         'city_data': True,
-                         'continent_code': 'EU',
-                         'country_code': 'FR',
-                         'country_code3': 'FRA',
-                         'country_name': 'France',
-                         'dma_code': 0,
-                         'flag_title': 'France',
-                         'flag_url': '/static/img/flags/fr.png',
-                         'latitude': 48.86280059814453,
-                         'longitude': 2.329200029373169,
-                         'postal_code': '75001',
-                         'region': 'A8'}
-                    '''
-                    indicator_type = IndicatorTypes.DOMAIN
-                    dom_data = otx.get_indicator_details_by_section(indicator_type, ioc, 'general')
-                    dom_data = dom_data['pulse_info']['pulses']
-                    dom_data = [tags.add(t) for tag in dom_data for t in tag['tags']]
-                    self.output[ioc].update({'otx_tags' : ",".join(tags)})
-                if ioc_type == 'domain' or ioc_type == 'ip':
-                    geo = otx.get_indicator_details_by_section(indicator_type, ioc, 'geo')
-                    self.output[ioc].update({'otx_asn': '{}/{}'.format(geo['asn'], geo['country_name'])})
+                    if ioc_type == 'domain':
+                        '''
+                        for domain the following sections are available
+                        'sections': ['general',
+                                      'geo',
+                                      'url_list',
+                                      'passive_dns',
+                                      'malware',
+                                      'whois',
+                                      'http_scans'],
+                                      
+                        geo section returns the following data 
+                        {'area_code': 0,
+                             'asn': 'AS16276 OVH SAS',
+                             'charset': 0,
+                             'city': 'Paris',
+                             'city_data': True,
+                             'continent_code': 'EU',
+                             'country_code': 'FR',
+                             'country_code3': 'FRA',
+                             'country_name': 'France',
+                             'dma_code': 0,
+                             'flag_title': 'France',
+                             'flag_url': '/static/img/flags/fr.png',
+                             'latitude': 48.86280059814453,
+                             'longitude': 2.329200029373169,
+                             'postal_code': '75001',
+                             'region': 'A8'}
+                        '''
+                        indicator_type = IndicatorTypes.DOMAIN
+                        dom_data = otx.get_indicator_details_by_section(indicator_type, ioc, 'general')
+                        dom_data = dom_data['pulse_info']['pulses']
+                        dom_data = [tags.add(t) for tag in dom_data for t in tag['tags']]
+                        self.output[ioc].update({'otx_tags' : ",".join(tags)})
+                    if ioc_type == 'domain' or ioc_type == 'ip':
+                        geo = otx.get_indicator_details_by_section(indicator_type, ioc, 'geo')
+                        self.output[ioc].update({'otx_asn': '{}/{}'.format(geo['asn'], geo['country_name'])})
             except Exception as ex:
                 self.output[ioc].update({'otx-found': 'no'})
                 log.info("[*] Otx exception {}".format(ex))
@@ -397,60 +400,61 @@ class intelbot():
         for ioc in iocs:
             params = ''
             url_param = ''
-            self.output[ioc].update({'_observable': ioc })
-            if ioc_type == 'ip':
-                params = {'ip': ioc, 'apikey' : self.vt_api }
-                url_param = 'ip-address'
-            if ioc_type == 'domain':
-                params = {'domain': ioc, 'apikey': self.vt_api}
-                url_param = 'domain'
+            if ioc.rstrip():
+                self.output[ioc].update({'_observable': ioc })
+                if ioc_type == 'ip':
+                    params = {'ip': ioc, 'apikey' : self.vt_api }
+                    url_param = 'ip-address'
+                if ioc_type == 'domain':
+                    params = {'domain': ioc, 'apikey': self.vt_api}
+                    url_param = 'domain'
 
-            if ioc_type == 'hash':
-                params = {'resource' : ioc , 'apikey' : self.vt_api }
-                url_param = 'file'
-            headers = {
-                'Accept-Encoding' : 'gzip, deflate',
-                "User-Agent" : "intelbot "
-            }
-            req = requests.get('https://www.virustotal.com/vtapi/v2/{}/report'.format(url_param), params=params,headers=headers)
-            resp = req.json()
-            link = 'https://www.virustotal.com/en/{}/{}/information/'.format(url_param, ioc)
-            for key, value in resp.items():
+                if ioc_type == 'hash':
+                    params = {'resource' : ioc , 'apikey' : self.vt_api }
+                    url_param = 'file'
+                headers = {
+                    'Accept-Encoding' : 'gzip, deflate',
+                    "User-Agent" : "intelbot "
+                }
+                req = requests.get('https://www.virustotal.com/vtapi/v2/{}/report'.format(url_param), params=params,headers=headers)
+                resp = req.json()
+                link = 'https://www.virustotal.com/en/{}/{}/information/'.format(url_param, ioc)
+                for key, value in resp.items():
 
-                if key == 'detected_downloaded_samples':
+                    if key == 'detected_downloaded_samples':
+                        self.output[ioc].update(
+                            {'Virus_total_detected_downloaded_samples': len(resp['detected_downloaded_samples'])})
+                    elif key == 'detected_urls':
+                        self.output[ioc].update({
+                            'Virus_total_detected_urls': len(resp['detected_urls'])})
+                    elif key == 'positives':
+                        self.output[ioc].update({
+                            'Virus_total_Detections (AV):': resp['positives']})
+                        link = 'https://www.virustotal.com/en/{}/{}/analysis/'.format(url_param, resp['sha256'])
+
+                    elif key == 'detected_communicating_samples':
+                        self.output[ioc].update(
+                            {'Virus_total_detected_communicating_samples': len(resp['detected_communicating_samples'])})
+                    try:
+                        self.output[ioc].update({'Virus_total_Mcafee_detected': resp['scans']['McAfee']['detected']})
+                    except Exception as ex:
+                        self.output[ioc].update({'Virus_total_Mcafee_detected': 'False'})
                     self.output[ioc].update(
-                        {'Virus_total_detected_downloaded_samples': len(resp['detected_downloaded_samples'])})
-                elif key == 'detected_urls':
-                    self.output[ioc].update({
-                        'Virus_total_detected_urls': len(resp['detected_urls'])})
-                elif key == 'positives':
-                    self.output[ioc].update({
-                        'Virus_total_Detections (AV):': resp['positives']})
-                    link = 'https://www.virustotal.com/en/{}/{}/analysis/'.format(url_param, resp['sha256'])
-
-                elif key == 'detected_communicating_samples':
-                    self.output[ioc].update(
-                        {'Virus_total_detected_communicating_samples': len(resp['detected_communicating_samples'])})
-                try:
-                    self.output[ioc].update({'Virus_total_Mcafee_detected': resp['scans']['McAfee']['detected']})
-                except Exception as ex:
-                    self.output[ioc].update({'Virus_total_Mcafee_detected': 'False'})
-                self.output[ioc].update(
-                    {'link': link })
+                        {'link': link })
 
 
     def query_abusedb(self,ips):
         for ip in ips:
-
-            params = {'ipAddress': ip ,'verbose': 'yes', 'maxAgeInDays' : '90'}
-            headers = {'Accept' : 'application/json', 'key' : self.abusedb_api}
-            req = requests.get('https://api.abuseipdb.com/api/v2/check',params=params,headers=headers)
-            if req.status_code == 200:
-                resp = req.json()
-                self.output[ip].update({'Abuse_db_confidence_score': resp['data']['abuseConfidenceScore']})
-                self.output[ip].update({'Abuse_db_total_reports': resp['data']['totalReports']})
-            else:
-                self.output[ip].update({'AbuseDB' : 'not-available'})
+            if ip.rstrip():
+                params = {'ipAddress': ip ,'verbose': 'yes', 'maxAgeInDays' : '90'}
+                headers = {'Accept' : 'application/json', 'key' : self.abusedb_api}
+                req = requests.get('https://api.abuseipdb.com/api/v2/check',params=params,headers=headers)
+                if req.status_code == 200:
+                    resp = req.json()
+                    self.output[ip].update({'Abuse_db_confidence_score': resp['data']['abuseConfidenceScore']})
+                    self.output[ip].update({'Abuse_db_total_reports': resp['data']['totalReports']})
+                else:
+                    self.output[ip].update({'AbuseDB' : 'not-available'})
 
 
 if __name__ == "__main__":
