@@ -33,7 +33,7 @@ Load the config file on your virtual environment.
 source config.ini
 ```
 
-##Intelbot Usage.
+## Intelbot Usage.
 
 See intelbot help menu below:
 

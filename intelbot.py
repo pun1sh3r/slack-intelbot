@@ -427,7 +427,6 @@ class intelbot():
 if __name__ == "__main__":
     slack_obj = intelbot()
     s_client = slack_obj.slack_client
-
     if s_client.rtm_connect(with_team_state=False,auto_reconnect=True):
         log.info("intelbot initiated and running...")
         intelbot_id = s_client.api_call("auth.test")['user_id']
