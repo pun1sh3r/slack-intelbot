@@ -29,6 +29,11 @@ except ImportError:
 http_client.HTTPConnection.debuglevel = 1
 
 
+
+
+
+
+
 class intelbot():
 
     def __init__(self):
@@ -122,6 +127,7 @@ class intelbot():
 
         cmd = command.split(' ')
         cmd_length = len(cmd)
+        ioc_list = ''
         if cmd_length > 2:
             self.slack_post_msg(response)
             return
