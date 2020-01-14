@@ -4,7 +4,6 @@ import re
 from slackclient import SlackClient
 import logging
 import sys
-from pprint import pprint
 import requests
 from collections import defaultdict
 from OTXv2 import OTXv2
@@ -27,11 +26,6 @@ try:
 except ImportError:
     import httplib as http_client
 http_client.HTTPConnection.debuglevel = 1
-
-
-
-
-
 
 
 class intelbot():
@@ -152,7 +146,7 @@ class intelbot():
                 h_check = self.is_hash(ioc).split('-')[1]
                 self.query_vt([ioc], 'hash')
                 self.query_otx([ioc], 'hash', h_check)
-                #self.query_h_analysis([ioc])
+                self.query_h_analysis([ioc])
                 self.query_urlhaus([ioc],h_check)
 
             elif self.is_domain(ioc) == True:
@@ -201,6 +195,7 @@ class intelbot():
         ip_whois  = IPWhois(ip)
         ip_whois = ip_whois.lookup_whois()
         self.output[ip].update({'asn': ip_whois['asn_description']})
+
     def is_hash(self,hash):
         sha1_regex = r'(?=(\b[A-Fa-f0-9]{40}\b))'
         md5_regex = r'(?=(\b[A-Fa-f0-9]{32}\b))'
@@ -213,6 +208,7 @@ class intelbot():
             return 'True-sha256'
         else:
             return 'False'
+
     def is_domain(self, domain):
         domain = domain.rstrip()
         if domain:
@@ -222,12 +218,14 @@ class intelbot():
                 return False
             else:
                 return True
+
     def is_ip(self, ip):
         ip_regex = r'^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$'
         if re.search(ip_regex, ip) == None:
             return False
         else:
             return True
+        
     def query_h_analysis(self, hashes):
         for hash in hashes:
             headers = {'api-key': self.hybrid_api, 'user-agent' : 'Falcon Sandbox'}
@@ -282,7 +280,7 @@ class intelbot():
                         tag_data = otx_data['pulse_info']['pulses']
                         tag_data = [tags.add(t) for tag in tag_data for t in tag['tags']]
                         reputation = reputation['reputation']
-                        self.output[ioc].update({'otx-asn' : otx_data['asn']})
+                        self.output[ioc].update({'otx-asn' : '{}-{}'.format(otx_data['asn'],otx_data['country_name'])})
                         if bool(reputation) == False:
                             #self.query_ip_whois(ioc)
                             self.output[ioc].update({'data': 'none'})
