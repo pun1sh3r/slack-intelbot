@@ -1,7 +1,7 @@
 import os
 import time
 import re
-from slackclient import SlackClient
+import slack
 import logging
 import sys
 import requests
@@ -12,6 +12,7 @@ from ipwhois import IPWhois
 from whois import whois
 import csv
 import json
+from io import StringIO
 import websocket
 
 log = logging.getLogger()
@@ -32,7 +33,9 @@ class intelbot():
 
     def __init__(self):
 
-        self.slack_client = SlackClient(os.environ.get('SLACK_BOT_TOKEN'))
+        self.rtm_client = slack.RTMClient(token=os.environ.get('SLACK_BOT_TOKEN'))
+        self.slack_client = slack.WebClient(token=os.environ.get('SLACK_BOT_TOKEN'))
+        #self.slack_client = SlackClient(os.environ.get('SLACK_BOT_TOKEN'))
         self.rtm_read_delay = 1
         self.mention_regex = "^<@(|[WU].+?)>(.*)"
         self.intelbot_id = self.slack_client.api_call("auth.test")['user_id']
@@ -42,63 +45,61 @@ class intelbot():
         self.output = defaultdict(dict)
         self.channel = os.environ.get("CHANNEL")
         self.file_id = 'none'
-    def slack_post_msg(self,msg):
+    def slack_post_msg(self,msg,webclient):
 
-        resp = self.slack_client.api_call(
-            "chat.postMessage",
+        resp = webclient.chat_postMessage(
             channel=self.channel,
             text=msg
         )
-    def slack_file_upload(self,file,type):
-        tmp = ''
-        content = ''
-        filename = ''
-        if type == 'text':
-            content = file
-            filename = 'output.txt'
-        elif type == 'csv':
-            with open(file, 'rb') as fh:
-                tmp = fh.read()
-                filename = file
-        res = self.slack_client.api_call(
-            "files.upload",
-            channels=self.channel,
-            content=content,
-            filename=filename,
-            file = tmp
-        )
+
+    def slack_file_upload(self,file,type,webclient):
+        try:
+
+            tmp = ''
+            content = ''
+            filename = ''
+            if type == 'text':
+                content = file
+                filename = 'output.txt'
+            elif type == 'csv':
+                with open(file, 'r') as fh:
+                    #tmp = fh.read()
+                    content = fh.read()
+                    filename = file
+
+            data = StringIO(content)
+            res = webclient.files_upload(
+                channels=self.channel,
+                file=data,
+                filename=filename,
+                filetype='text'
+            )
+        except Exception as ex:
+            log.info(ex)
+
     def parse_direct_mention(self,event_text):
         matches = re.search(self.mention_regex, event_text)
         return (matches.group(1), matches.group(2).strip()) if matches else (None,None)
-    def slack_file_read(self):
-        res = self.slack_client.api_call(
-            "files.info",
-            file=self.file_id
-        )
 
-        if res['ok'] == False:
-            return False
-        else:
+
+    def slack_file_read(self,webclient):
+        try:
+            res = webclient.files_info(
+                file=self.file_id
+            )
+
             file_url = res['file']['url_private']
             fh = requests.get(file_url, headers={'Authorization': 'Bearer {}'.format(os.environ.get('SLACK_BOT_TOKEN'))})
             file_data = fh.text
             return file_data.split('\n')
-    def parse_commands(self, slack_events):
-        for event in slack_events:
-            if event['type'] == 'message' and not 'subtype' in event:
-                user_id, message = self.parse_direct_mention(event['text'])
-                if user_id == slack_obj.intelbot_id:
-                    log.info("{}-{}".format(message, event['channel']))
-                    if 'files' in event:
-                        self.file_id= event['files'][0]['id']
+        except Exception as ex :
+            return False
 
-                        return message, event['channel'], self.file_id
-                    return message, event['channel'],self.file_id
-        return None, None, None
-
-    def handle_command(self,command, channel):
+    def handle_command(self,command,webclient):
         response = "Not sure what you meant. Try < @intelbot > \"1.1.1.1,google[.]com,06060eae9493361eb519d1df65855cd9\" <{}>".format("csv|text ")
 
+        if command == None:
+            return
         if command.startswith("help"):
             response = '''
         Greetings! I am intelbot at your service. Here is what i can do:
@@ -116,14 +117,14 @@ class intelbot():
         output types: csv|text 
 
                     '''
-            self.slack_post_msg(response)
+            self.slack_post_msg(response,webclient)
             return
 
         cmd = command.split(' ')
         cmd_length = len(cmd)
         ioc_list = ''
         if cmd_length > 2:
-            self.slack_post_msg(response)
+            self.slack_post_msg(response,webclient)
             return
         try:
             output_format = cmd[1]
@@ -131,12 +132,13 @@ class intelbot():
             output_format = 'text'
 
         if cmd[0] == 'file':
-            ioc_list = self.slack_file_read()
-        if self.slack_file_read() == False:
+            ioc_list = self.slack_file_read(webclient)
+        if self.slack_file_read(webclient) == False:
             ioc_list = cmd[0].split(',')
-        self.slack_post_msg("Querying your indicators, just a sec.....")
+        self.slack_post_msg("Querying your indicators, just a sec.....",webclient)
         for ioc in ioc_list:
             ioc = ioc.rstrip()
+            ioc = re.sub(r'(>|\[|\]|\s|\(|\))', '', ioc)
             tags = set()
             if self.is_ip(ioc) == True:
                 self.query_vt([ioc],'ip')
@@ -150,7 +152,6 @@ class intelbot():
                 self.query_urlhaus([ioc],h_check)
 
             elif self.is_domain(ioc) == True:
-                ioc = re.sub(r'(>|\[|\]|\s)','',ioc)
                 self.query_vt([ioc], 'domain')
                 self.query_otx([ioc], 'domain', 'None')
                 self.query_whois([ioc])
@@ -158,18 +159,18 @@ class intelbot():
             elif ioc == '':
                 continue
             else:
-                self.slack_post_msg(response)
+                self.slack_post_msg(response,webclient)
                 return
 
         if output_format == 'csv':
-            self.craft_csv()
+            self.craft_csv(webclient)
 
         if output_format == 'text':
             output = json.dumps(self.output, indent=4)
-            self.slack_file_upload(output,output_format)
+            self.slack_file_upload(output,output_format,webclient)
         return
 
-    def craft_csv(self):
+    def craft_csv(self,webclient):
         with open('tmp.csv', 'w') as csvfile:
             uniq_fields = set()
             fieldnames = [uniq_fields.add(k) for key in self.output.keys() for k in self.output[key].keys()]
@@ -177,7 +178,7 @@ class intelbot():
             writer.writeheader()
             for key, value in self.output.items():
                 writer.writerow(value)
-        self.slack_file_upload('tmp.csv','csv')
+        self.slack_file_upload('tmp.csv','csv',webclient)
     def query_whois(self,domains):
         for dom in domains:
             try:
@@ -212,7 +213,6 @@ class intelbot():
     def is_domain(self, domain):
         domain = domain.rstrip()
         if domain:
-            domain = domain.replace('[.]','.')
             dom_regex = r'\A([a-z0-9]+(-[a-z0-9]+)*\[?\.\]?)+[a-z]{2,}\Z'
             if re.search(dom_regex, domain) == None:
                 return False
@@ -225,7 +225,7 @@ class intelbot():
             return False
         else:
             return True
-        
+
     def query_h_analysis(self, hashes):
         for hash in hashes:
             headers = {'api-key': self.hybrid_api, 'user-agent' : 'Falcon Sandbox'}
@@ -428,28 +428,27 @@ class intelbot():
             except Exception as ex:
                 log.info("json exception on {} {}".format(ex, iocs))
 
+@slack.RTMClient.run_on(event='message')
+def main(**payload):
+    event = payload['data']
+    webclient = payload['web_client']
+    user_id, message = slack_obj.parse_direct_mention(event['text'])
+    slack_obj.channel = event['channel']
+    if user_id == slack_obj.intelbot_id:
+        log.info("{}-{}".format(message, slack_obj.channel ))
+        if 'files' in event:
+            slack_obj.file_id = event['files'][0]['id']
+        #    slack_obj.handle_command(message,webclient)
+        #    return
+        slack_obj.handle_command(message,webclient)
+        return
+    slack_obj.handle_command(None,webclient)
+
+
 if __name__ == "__main__":
     slack_obj = intelbot()
     s_client = slack_obj.slack_client
-    if s_client.rtm_connect(with_team_state=False,auto_reconnect=True):
-        log.info("intelbot initiated and running...")
-        intelbot_id = s_client.api_call("auth.test")['user_id']
-        log.info(intelbot_id)
-        while True:
-            try:
-                command,channel,file_id  = slack_obj.parse_commands(s_client.rtm_read())
-                if command:
-                    slack_obj.handle_command(command,channel)
-
-                time.sleep(slack_obj.rtm_read_delay)
-                slack_obj.output.clear()
-            except websocket.WebSocketConnectionClosedException as ex:
-                log.info("[*] Caught websocket disconnect {}, reconnecting...".format(ex))
-                time.sleep(1)
-                s_client.rtm_connect()
-            except Exception as ex:
-                log.info("[*] Exception caught {}".format(ex))
-                s_client.rtm_connect()
-    else:
-        s_client.rtm_connect()
-        log.info("{}".format("Connection failed. "))
+    log.info("intelbot initiated and running...")
+    intelbot_id = slack_obj.intelbot_id
+    log.info(intelbot_id)
+    slack_obj.rtm_client.start()
