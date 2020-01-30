@@ -138,6 +138,7 @@ class intelbot():
         self.slack_post_msg("Querying your indicators, just a sec.....",webclient)
         for ioc in ioc_list:
             ioc = ioc.rstrip()
+            ioc = re.sub(r'(>|\[|\]|\s|\(|\))', '', ioc)
             tags = set()
             if self.is_ip(ioc) == True:
                 self.query_vt([ioc],'ip')
@@ -151,7 +152,6 @@ class intelbot():
                 self.query_urlhaus([ioc],h_check)
 
             elif self.is_domain(ioc) == True:
-                ioc = re.sub(r'(>|\[|\]|\s)','',ioc)
                 self.query_vt([ioc], 'domain')
                 self.query_otx([ioc], 'domain', 'None')
                 self.query_whois([ioc])
@@ -213,7 +213,6 @@ class intelbot():
     def is_domain(self, domain):
         domain = domain.rstrip()
         if domain:
-            domain = domain.replace('[.]','.')
             dom_regex = r'\A([a-z0-9]+(-[a-z0-9]+)*\[?\.\]?)+[a-z]{2,}\Z'
             if re.search(dom_regex, domain) == None:
                 return False
